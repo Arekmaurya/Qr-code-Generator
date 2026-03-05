@@ -1,0 +1,7 @@
+streamlit
+qrcode[pil]
+Pillow
+pydantic
+fastapi
+uvicorn
+requests
