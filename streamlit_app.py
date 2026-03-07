@@ -1,7 +1,7 @@
 import streamlit as st
 import qrcode
 from io import BytesIO
-from PIL import Image, ImageEnhance
+from PIL import Image
 
 # Set page configuration
 st.set_page_config(
@@ -35,13 +35,9 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 
-def generate_qr(
-    data, box_size, border, fill_color, back_color,
-    logo_image=None, rotation_angle=0,
-    image_mode="Center Logo", bg_opacity=25,
-):
-    """Generates a QR code image with optional logo or background image."""
-    # Use HIGH error correction when an image is present
+def generate_qr(data, box_size, border, fill_color, back_color, logo_image=None):
+    """Generates a QR code image, optionally with a logo in the center."""
+    # Use HIGH error correction when a logo is present so the QR stays scannable
     error_level = (
         qrcode.constants.ERROR_CORRECT_H
         if logo_image
@@ -56,71 +52,27 @@ def generate_qr(
     )
     qr.add_data(data)
     qr.make(fit=True)
+    img = qr.make_image(fill_color=fill_color, back_color=back_color).convert("RGBA")
 
-    if logo_image and image_mode == "Background Image":
-        # ── Background Image mode ────────────────────────────────────
-        # Generate QR with black fill and white background first
-        qr_img = qr.make_image(
-            fill_color=fill_color, back_color="white"
-        ).convert("RGBA")
-        qr_w, qr_h = qr_img.size
+    if logo_image:
+        # Open and resize the logo
+        logo = logo_image.convert("RGBA")
 
-        # Prepare the background image: resize to cover QR, apply opacity
-        bg = logo_image.convert("RGBA").resize((qr_w, qr_h), Image.LANCZOS)
+        # The logo should occupy at most ~25 % of the QR code area
+        qr_width, qr_height = img.size
+        max_logo_size = int(qr_width * 0.25)
+        logo.thumbnail((max_logo_size, max_logo_size), Image.LANCZOS)
 
-        # Rotate if requested
-        if rotation_angle:
-            bg = bg.rotate(rotation_angle, resample=Image.BICUBIC, expand=False)
-            bg = bg.resize((qr_w, qr_h), Image.LANCZOS)
+        # Center the logo
+        logo_w, logo_h = logo.size
+        pos = ((qr_width - logo_w) // 2, (qr_height - logo_h) // 2)
 
-        # Lower the opacity of the background image
-        alpha = bg.split()[3]
-        alpha = alpha.point(lambda p: int(p * bg_opacity / 100))
-        bg.putalpha(alpha)
+        # Paste with alpha mask so transparency is preserved
+        img.paste(logo, pos, mask=logo)
 
-        # Create a white canvas, paste the faded background image on it
-        canvas = Image.new("RGBA", (qr_w, qr_h), (255, 255, 255, 255))
-        canvas = Image.alpha_composite(canvas, bg)
-
-        # Now make the QR's white pixels transparent so only dark modules remain
-        qr_data = qr_img.getdata()
-        transparent_qr = []
-        for pixel in qr_data:
-            # If pixel is white-ish (background), make it fully transparent
-            if pixel[0] > 240 and pixel[1] > 240 and pixel[2] > 240:
-                transparent_qr.append((0, 0, 0, 0))
-            else:
-                transparent_qr.append(pixel)
-        qr_img.putdata(transparent_qr)
-
-        # Composite: faded background + dark QR modules on top
-        final = Image.alpha_composite(canvas, qr_img)
-
-    else:
-        # ── Normal / Center Logo mode ────────────────────────────────
-        final = qr.make_image(
-            fill_color=fill_color, back_color=back_color
-        ).convert("RGBA")
-
-        if logo_image and image_mode == "Center Logo":
-            logo = logo_image.convert("RGBA")
-
-            if rotation_angle:
-                logo = logo.rotate(
-                    rotation_angle, resample=Image.BICUBIC, expand=True
-                )
-
-            qr_w, qr_h = final.size
-            max_logo_size = int(qr_w * 0.25)
-            logo.thumbnail((max_logo_size, max_logo_size), Image.LANCZOS)
-
-            logo_w, logo_h = logo.size
-            pos = ((qr_w - logo_w) // 2, (qr_h - logo_h) // 2)
-            final.paste(logo, pos, mask=logo)
-
-    # Convert to bytes
+    # Convert to bytes (use PNG to keep transparency)
     buf = BytesIO()
-    final.save(buf, format="PNG")
+    img.save(buf, format="PNG")
     return buf.getvalue()
 
 
@@ -145,36 +97,16 @@ st.sidebar.header("🎨 Colors")
 fill_color = st.sidebar.color_picker("QR Code Color", value="#000000")
 back_color = st.sidebar.color_picker("Background Color", value="#FFFFFF")
 
-st.sidebar.header("🖼️ Custom Image")
+st.sidebar.header("🖼️ Custom Logo / Image")
 logo_file = st.sidebar.file_uploader(
-    "Upload an image",
+    "Upload a logo to embed in the center",
     type=["png", "jpg", "jpeg", "svg", "webp"],
-    help="Use as a center logo or as a full background behind the QR code."
+    help="The image will be resized and placed in the center of the QR code. "
+         "Error correction is automatically increased to keep the QR scannable."
 )
 
-# Image options (only shown when an image is uploaded)
-image_mode = "Center Logo"
-rotation_angle = 0
-bg_opacity = 25
-
 if logo_file:
-    image_mode = st.sidebar.radio(
-        "Image Mode",
-        ["Center Logo", "Background Image"],
-        help="**Center Logo** — places the image in the center.\n\n"
-             "**Background Image** — uses the image as a full background "
-             "with adjustable opacity."
-    )
-    rotation_angle = st.sidebar.slider(
-        "🔄 Rotate Image", min_value=0, max_value=360, value=0, step=15,
-        help="Rotate the image before embedding."
-    )
-    if image_mode == "Background Image":
-        bg_opacity = st.sidebar.slider(
-            "🌫️ Background Opacity", min_value=5, max_value=50, value=25,
-            step=5, help="Lower = more subtle, Higher = more visible."
-        )
-    st.sidebar.image(logo_file, caption="Image preview", use_container_width=True)
+    st.sidebar.image(logo_file, caption="Logo preview", use_container_width=True)
 
 # ── Main input area ──────────────────────────────────────────────────────
 data = st.text_area(
@@ -189,23 +121,23 @@ if st.button("Generate QR Code"):
     else:
         with st.spinner("✨ Creating your QR code..."):
             try:
+                # Load the logo if one was uploaded
                 logo_img = Image.open(logo_file) if logo_file else None
 
                 qr_image_bytes = generate_qr(
                     data, box_size, border,
                     fill_color, back_color,
                     logo_image=logo_img,
-                    rotation_angle=rotation_angle,
-                    image_mode=image_mode,
-                    bg_opacity=bg_opacity,
                 )
 
+                # Display the image
                 st.image(
                     qr_image_bytes,
                     caption="Your Generated QR Code",
                     use_container_width=True,
                 )
 
+                # Download button
                 st.download_button(
                     label="💾 Download QR Code",
                     data=qr_image_bytes,
@@ -220,17 +152,11 @@ st.markdown("---")
 with st.expander("ℹ️ About this tool"):
     st.write("""
         This tool uses the `qrcode` library to generate standard QR codes.
+        You can optionally upload a **custom logo** that will be embedded in the
+        center of the QR code. When a logo is added, error correction is
+        automatically raised to **HIGH** so the code remains scannable.
 
-        **Image Modes:**
-        - **Center Logo** — places your image in the center of the QR code.
-        - **Background Image** — uses the image as a full background with
-          adjustable opacity (the white QR background is made transparent so
-          the image shows through).
-
-        Error correction is automatically raised to **HIGH** when an image is
-        used, keeping the QR code scannable.
-
-        Built with Streamlit and ready for deployment on
+        It is built with Streamlit and is ready for deployment on
         **Streamlit Community Cloud**.
     """)
 st.caption("Built with ❤️ using Streamlit")
