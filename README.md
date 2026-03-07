@@ -10,7 +10,10 @@ Check out the live application here:
 
 ## ✨ Features
 - **Instant Generation**: Get your QR code in seconds.
+- **Custom Logo / Image**: Upload your own logo or image to embed in the center of the QR code.
+- **Color Customization**: Pick custom QR code and background colors for branded codes.
 - **Customizable**: Adjust box size and border thickness.
+- **Smart Error Correction**: Automatically switches to HIGH error correction when a logo is added, keeping the QR scannable.
 - **Downloadable**: Save your generated QR codes as high-quality PNG images.
 - **Dual Architecture**:
     - **FastAPI Backend**: Robust API for programmatic QR generation.
